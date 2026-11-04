@@ -65,7 +65,7 @@ def parse_stena_list():
                 continue
             seen_urls.add(full)
             links.append({"title": title, "url": full})
-    return links[:5] # Берем только 5 новостей за раз, чтобы не спамить
+    return links[:5]
 
 def parse_article(url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -130,7 +130,9 @@ async def main():
                 continue
 
             short_text = summarize_text(article["text"])
-            caption = f"<b>{item['title']}</b>\n\n{short_text}\n\n<a href=\"{item['url']}\">сайт</a>"
+            
+            # ВОТ ЗДЕСЬ ИЗМЕНЕНИЕ: Источник: stena.ee (кликабельно)
+            caption = f"<b>{item['title']}</b>\n\n{short_text}\n\nИсточник: <a href=\"{item['url']}\">stena.ee</a>"
 
             ok = False
             if article["img"]:
@@ -142,7 +144,7 @@ async def main():
                     print(f"send error: {e}")
             mark_seen(conn, item["url"])
             sent += 1
-            await asyncio.sleep(6) # Ждем 6 секунд, чтобы Gemini не забивался
+            await asyncio.sleep(6)
     finally:
         await bot.session.close()
         conn.close()
