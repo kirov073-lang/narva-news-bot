@@ -7,16 +7,10 @@ from aiogram import Bot
 from aiogram.types import FSInputFile
 from datetime import datetime
 import os
-import time
-import random
-from google import genai
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
-GEMINI_KEY = os.environ.get("GEMINI_KEY")
 DB_FILE = "seen_news.db"
-
-client = genai.Client(api_key=GEMINI_KEY)
 
 async def send_photo(bot, photo_url, caption):
     try:
@@ -45,7 +39,6 @@ def is_new(conn, url):
     return conn.execute("SELECT 1 FROM seen WHERE url=?", (url,)).fetchone() is None
 
 def is_new_text(conn, text):
-    # Проверка на дубликат по смыслу (первые 50 символов)
     text_hash = text[:50].strip()
     return conn.execute("SELECT 1 FROM seen_text WHERE text_hash=?", (text_hash,)).fetchone() is None
 
@@ -74,11 +67,10 @@ def parse_stena_list():
                 continue
             seen_urls.add(full)
             links.append({"title": title, "url": full, "source": "stena.ee"})
-    return links[:3] # Берем 3 с stena и 3 с narva
+    return links[:3]
 
 def parse_narva_list():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    # Берем главную страницу narva.ee (русская версия)
     r = requests.get("https://www.narva.ee/ru", headers=headers, timeout=20)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
@@ -88,12 +80,10 @@ def parse_narva_list():
         title = a.get_text(strip=True)
         if not title or len(title) < 30:
             continue
-        # Ищем ссылки на новости
         if href.startswith("/") or href.startswith("https://www.narva.ee/"):
             full = href if href.startswith("http") else urljoin("https://www.narva.ee/", href)
             if len(full) < 45 or full in seen_urls:
                 continue
-            # Оставляем только ссылки, где есть слово 'novosti' или 'news'
             if "/novosti/" in full or "/news/" in full:
                 seen_urls.add(full)
                 links.append({"title": title, "url": full, "source": "narva.ee"})
@@ -105,7 +95,6 @@ def parse_article(url):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # Пытаемся найти основной текст (универсально для обоих сайтов)
     paragraphs = soup.find_all("p")
     valid_paragraphs = [p for p in paragraphs if len(p.get_text(strip=True)) > 30]
     
@@ -123,38 +112,22 @@ def parse_article(url):
 
     return {"img": img_url, "text": body}
 
+# ВМЕСТО ИИ: Берем первые 2-3 абзаца (это и есть суть)
 def summarize_text(text):
-    if not text or len(text) < 100:
-        return text
-    
-    for attempt in range(4):
-        try:
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=f"Ты — редактор новостей. Сократи этот текст до 4-6 предложений на русском языке. Оставь все важные факты и цифры, но убери 'воду', лишние подробности и повторы. Пиши понятно и по делу.\n\nТекст:\n{text[:3000]}"
-            )
-            if response.text:
-                print(f"--- GEMINI OTVET POLUCHEN (попытка {attempt+1}) ---")
-                return response.text.strip()
-        except Exception as e:
-            err_text = str(e)
-            if "503" in err_text or "UNAVAILABLE" in err_text or "overloaded" in err_text:
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
-                print(f"--- GEMINI ZANYAT (503), zhdu {wait_time:.1f} sek... ---")
-                time.sleep(wait_time)
-            else:
-                print(f"--- KRITICHESKAYA OSHIBKA GEMINI: {e} ---")
-                break
-    
-    return f"⚠️ Не удалось сократить текст.\n\n{text[:300]}..."
+    if not text:
+        return ""
+    paragraphs = text.split("\n\n")
+    short_text = "\n\n".join(paragraphs[:3])
+    if len(short_text) > 600:
+        short_text = short_text[:600].rsplit(" ", 1)[0] + "..."
+    return short_text
 
 async def main():
-    if not BOT_TOKEN or not CHANNEL_ID or not GEMINI_KEY:
+    if not BOT_TOKEN or not CHANNEL_ID:
         print("ERROR: Настройки не заданы")
         return
     conn = init_db()
     
-    # Собираем новости с двух сайтов
     stena_links = parse_stena_list()
     narva_links = parse_narva_list()
     all_links = stena_links + narva_links
@@ -170,15 +143,13 @@ async def main():
                 
             article = parse_article(item["url"])
             if not article:
-                print(f"Не удалось разобрать: {item['url']}")
                 continue
             
-            # ПРОВЕРКА НА ДУБЛИКАТЫ ПО ТЕКСТУ
             if not is_new_text(conn, article["text"]):
-                print(f"Пропущен дубликат текста: {item['title'][:30]}...")
-                mark_seen(conn, item["url"], article["text"]) # Помечаем, чтобы больше не проверять ссылку
+                mark_seen(conn, item["url"], article["text"])
                 continue
 
+            # Берем просто первые абзацы, без ИИ
             short_text = summarize_text(article["text"])
             
             caption = f"<b>{item['title']}</b>\n\n{short_text}\n\nИсточник: <a href=\"{item['url']}\">{item['source']}</a>"
@@ -195,8 +166,8 @@ async def main():
             mark_seen(conn, item["url"], article["text"])
             sent += 1
             
-            print("Ждем 5 минут перед следующей новостью...")
-            await asyncio.sleep(300) # Ждем 5 минут
+            # Ждем 5 минут между постами
+            await asyncio.sleep(300) 
     finally:
         await bot.session.close()
         conn.close()
