@@ -7,10 +7,16 @@ from aiogram import Bot
 from aiogram.types import FSInputFile
 from datetime import datetime
 import os
+from google import genai
+from google.genai import types
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
+GEMINI_KEY = os.environ.get("GEMINI_KEY")
 DB_FILE = "seen_news.db"
+
+# Инициализация клиента Gemini
+client = genai.Client(api_key=GEMINI_KEY)
 
 async def send_photo(bot, photo_url, caption):
     try:
@@ -87,14 +93,30 @@ def parse_article(url):
             paragraphs.append(text)
 
     body = "\n\n".join(paragraphs)
-    if len(body) > 3500:
-        body = body[:3500].rsplit(" ", 1)[0] + "…"
-
     return {"img": img_url, "text": body}
 
+def summarize_text(text):
+    """Сокращает текст новости через Gemini."""
+    if not text or len(text) < 100:
+        return text
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"Сократи эту новость до 3-5 предложений на русском языке. Пиши ясно, понятно и по делу. Не добавляй ничего от себя. Вот текст:\n\n{text}",
+            config=types.GenerateContentConfig(
+                max_output_tokens=500,
+                temperature=0.3,
+            )
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"Gemini error: {e}")
+        return text[:500] + "…"
+
 async def main():
-    if not BOT_TOKEN or not CHANNEL_ID:
-        print("ERROR: BOT_TOKEN или CHANNEL_ID не заданы")
+    if not BOT_TOKEN or not CHANNEL_ID or not GEMINI_KEY:
+        print("ERROR: BOT_TOKEN, CHANNEL_ID или GEMINI_KEY не заданы")
         return
     conn = init_db()
     links = parse_stena_list()
@@ -112,7 +134,10 @@ async def main():
                 mark_seen(conn, item["url"])
                 continue
 
-            caption = f"<b>{item['title']}</b>\n\n{article['text']}\n\n<a href=\"{item['url']}\">сайт</a>"
+            # Сокращаем текст через Gemini
+            short_text = summarize_text(article["text"])
+            caption = f"<b>{item['title']}</b>\n\n{short_text}\n\n<a href=\"{item['url']}\">сайт</a>"
+            
             ok = False
             if article["img"]:
                 ok = await send_photo(bot, article["img"], caption)
@@ -123,7 +148,7 @@ async def main():
                     print(f"send error: {e}")
             mark_seen(conn, item["url"])
             sent += 1
-            await asyncio.sleep(3)
+            await asyncio.sleep(5) # Пауза больше, т.к. Gemini нужно время
     finally:
         await bot.session.close()
         conn.close()
