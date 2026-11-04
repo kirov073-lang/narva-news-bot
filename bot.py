@@ -61,12 +61,11 @@ def parse_stena_list():
             full = href if href.startswith("http") else urljoin("https://www.stena.ee/", href)
             if len(full) < 45 or full in seen_urls:
                 continue
-            # Отсекаем афишу и лишние страницы
             if "/afisha/" in full:
                 continue
             seen_urls.add(full)
             links.append({"title": title, "url": full})
-    return links[:10]
+    return links[:5] # Берем только 5 новостей за раз, чтобы не спамить
 
 def parse_article(url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -74,19 +73,14 @@ def parse_article(url):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # Ищем все абзацы на странице
     paragraphs = soup.find_all("p")
-    
-    # Оставляем только те, где больше 30 символов (отсекаем мусор из меню)
     valid_paragraphs = [p for p in paragraphs if len(p.get_text(strip=True)) > 30]
     
     if not valid_paragraphs:
         return None
         
-    # Берем текст из найденных абзацев
     body = "\n\n".join([p.get_text(" ", strip=True) for p in valid_paragraphs])
     
-    # Ищем картинку (первую попавшуюся нормальную)
     img_url = None
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src")
@@ -102,20 +96,22 @@ def summarize_text(text):
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=f"Сократи эту новость до 3-5 предложений на русском языке. Пиши ясно, понятно и по делу. Не добавляй ничего от себя. Вот текст:\n\n{text[:4000]}",
+            contents=f"Ты — редактор новостей. Сократи этот текст до 3-5 предложений на русском языке. Оставь только самую суть. Пиши четко и понятно. Не добавляй воду.\n\nТекст:\n{text[:3000]}",
             config=types.GenerateContentConfig(
-                max_output_tokens=500,
-                temperature=0.3,
+                max_output_tokens=300,
+                temperature=0.1,
             )
         )
-        return response.text.strip()
+        if response.text:
+            return response.text.strip()
+        return text[:400] + "…"
     except Exception as e:
         print(f"Gemini error: {e}")
-        return text[:500] + "…"
+        return text[:400] + "…"
 
 async def main():
     if not BOT_TOKEN or not CHANNEL_ID or not GEMINI_KEY:
-        print("ERROR: BOT_TOKEN, CHANNEL_ID или GEMINI_KEY не заданы")
+        print("ERROR: Настройки не заданы")
         return
     conn = init_db()
     links = parse_stena_list()
@@ -146,7 +142,7 @@ async def main():
                     print(f"send error: {e}")
             mark_seen(conn, item["url"])
             sent += 1
-            await asyncio.sleep(4)
+            await asyncio.sleep(6) # Ждем 6 секунд, чтобы Gemini не забивался
     finally:
         await bot.session.close()
         conn.close()
