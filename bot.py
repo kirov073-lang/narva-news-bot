@@ -94,20 +94,22 @@ def summarize_text(text):
     if not text or len(text) < 100:
         return text
     try:
+        # Используем стабильную модель
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"Ты — редактор новостей. Сократи этот текст до 3-5 предложений на русском языке. Оставь только самую суть. Пиши четко и понятно. Не добавляй воду.\n\nТекст:\n{text[:3000]}",
+            model="gemini-1.5-flash", 
+            contents=f"Сократи этот текст до 3-5 предложений на русском языке. Оставь только суть. Пиши понятно.\n\n{text[:3000]}",
             config=types.GenerateContentConfig(
                 max_output_tokens=300,
                 temperature=0.1,
             )
         )
         if response.text:
+            print("--- GEMINI OTVET POLUCHEN ---")
             return response.text.strip()
-        return text[:400] + "…"
+        return "Ошибка: пустой ответ от Gemini"
     except Exception as e:
-        print(f"Gemini error: {e}")
-        return text[:400] + "…"
+        print(f"--- KRITICHESKAYA OSHIBKA GEMINI: {e} ---")
+        return f"Ошибка сокращения: {str(e)[:100]}..."
 
 async def main():
     if not BOT_TOKEN or not CHANNEL_ID or not GEMINI_KEY:
@@ -131,7 +133,7 @@ async def main():
 
             short_text = summarize_text(article["text"])
             
-            # ВОТ ЗДЕСЬ ИЗМЕНЕНИЕ: Источник: stena.ee (кликабельно)
+            # Внизу кликабельный источник
             caption = f"<b>{item['title']}</b>\n\n{short_text}\n\nИсточник: <a href=\"{item['url']}\">stena.ee</a>"
 
             ok = False
