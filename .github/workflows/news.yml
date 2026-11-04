@@ -14,9 +14,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install deps
-        run: pip install requests beautifulsoup4 aiogram
+        run: pip install requests beautifulsoup4 aiogram google-genai
       - name: Run bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
         run: python bot.py
