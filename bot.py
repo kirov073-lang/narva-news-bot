@@ -112,7 +112,7 @@ async def main():
                 mark_seen(conn, item["url"])
                 continue
 
-            caption = f"<b>{item['title']}</b>\n\n{article['text']}\n\n{item['url']}"
+            caption = f"<b>{item['title']}</b>\n\n{article['text']}\n\n<a href=\"{item['url']}\">сайт</a>"
             ok = False
             if article["img"]:
                 ok = await send_photo(bot, article["img"], caption)
