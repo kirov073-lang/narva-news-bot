@@ -14,7 +14,6 @@ CHANNEL_ID = os.environ.get("CHANNEL_ID")
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
 DB_FILE = "seen_news.db"
 
-# Инициализация клиента
 client = genai.Client(api_key=GEMINI_KEY)
 
 async def send_photo(bot, photo_url, caption):
@@ -94,9 +93,8 @@ def summarize_text(text):
     if not text or len(text) < 100:
         return text
     try:
-        # Используем новый синтаксис из библиотеки google-genai
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=f"Ты — редактор новостей. Сократи этот текст до 3-5 предложений на русском языке. Оставь только суть. Пиши понятно.\n\nТекст:\n{text[:3000]}"
         )
         if response.text:
@@ -129,7 +127,6 @@ async def main():
 
             short_text = summarize_text(article["text"])
             
-            # Внизу кликабельный источник
             caption = f"<b>{item['title']}</b>\n\n{short_text}\n\nИсточник: <a href=\"{item['url']}\">stena.ee</a>"
 
             ok = False
