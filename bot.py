@@ -15,7 +15,6 @@ CHANNEL_ID = os.environ.get("CHANNEL_ID")
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
 DB_FILE = "seen_news.db"
 
-# Инициализация клиента Gemini
 client = genai.Client(api_key=GEMINI_KEY)
 
 async def send_photo(bot, photo_url, caption):
@@ -62,9 +61,12 @@ def parse_stena_list():
             full = href if href.startswith("http") else urljoin("https://www.stena.ee/", href)
             if len(full) < 45 or full in seen_urls:
                 continue
+            # Отсекаем афишу и лишние страницы
+            if "/afisha/" in full:
+                continue
             seen_urls.add(full)
             links.append({"title": title, "url": full})
-    return links[:15]
+    return links[:10]
 
 def parse_article(url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -72,38 +74,35 @@ def parse_article(url):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    content = soup.select_one("div.text.post-text")
-    if not content:
+    # Ищем все абзацы на странице
+    paragraphs = soup.find_all("p")
+    
+    # Оставляем только те, где больше 30 символов (отсекаем мусор из меню)
+    valid_paragraphs = [p for p in paragraphs if len(p.get_text(strip=True)) > 30]
+    
+    if not valid_paragraphs:
         return None
-
+        
+    # Берем текст из найденных абзацев
+    body = "\n\n".join([p.get_text(" ", strip=True) for p in valid_paragraphs])
+    
+    # Ищем картинку (первую попавшуюся нормальную)
     img_url = None
-    img = content.find("img")
-    if img:
+    for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src")
-        if src:
+        if src and ("uploads" in src or "stena.ee" in src):
             img_url = urljoin("https://www.stena.ee/", src)
+            break
 
-    for tag in content.find_all(["div", "img"]):
-        tag.decompose()
-
-    paragraphs = []
-    for p in content.find_all(["p", "h2", "h3"]):
-        text = p.get_text(" ", strip=True)
-        if text:
-            paragraphs.append(text)
-
-    body = "\n\n".join(paragraphs)
     return {"img": img_url, "text": body}
 
 def summarize_text(text):
-    """Сокращает текст новости через Gemini."""
     if not text or len(text) < 100:
         return text
-    
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=f"Сократи эту новость до 3-5 предложений на русском языке. Пиши ясно, понятно и по делу. Не добавляй ничего от себя. Вот текст:\n\n{text}",
+            contents=f"Сократи эту новость до 3-5 предложений на русском языке. Пиши ясно, понятно и по делу. Не добавляй ничего от себя. Вот текст:\n\n{text[:4000]}",
             config=types.GenerateContentConfig(
                 max_output_tokens=500,
                 temperature=0.3,
@@ -134,10 +133,9 @@ async def main():
                 mark_seen(conn, item["url"])
                 continue
 
-            # Сокращаем текст через Gemini
             short_text = summarize_text(article["text"])
             caption = f"<b>{item['title']}</b>\n\n{short_text}\n\n<a href=\"{item['url']}\">сайт</a>"
-            
+
             ok = False
             if article["img"]:
                 ok = await send_photo(bot, article["img"], caption)
@@ -148,7 +146,7 @@ async def main():
                     print(f"send error: {e}")
             mark_seen(conn, item["url"])
             sent += 1
-            await asyncio.sleep(5) # Пауза больше, т.к. Gemini нужно время
+            await asyncio.sleep(4)
     finally:
         await bot.session.close()
         conn.close()
