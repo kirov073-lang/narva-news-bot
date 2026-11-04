@@ -95,14 +95,25 @@ def parse_article(url):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
+    # Ищем текст новости (все абзацы)
     paragraphs = soup.find_all("p")
     valid_paragraphs = [p for p in paragraphs if len(p.get_text(strip=True)) > 30]
     
     if not valid_paragraphs:
         return None
         
-    body = "\n\n".join([p.get_text(" ", strip=True) for p in valid_paragraphs])
+    # Берем ПЕРВЫЙ нормальный абзац
+    first_para = valid_paragraphs[0].get_text(" ", strip=True)
     
+    # Если он не заканчивается точкой, ищем следующий, пока не найдем целый
+    body = first_para
+    if body[-1] not in ['.', '!', '?', '…']:
+        for p in valid_paragraphs[1:]:
+            body += " " + p.get_text(" ", strip=True)
+            if body[-1] in ['.', '!', '?', '…']:
+                break
+    
+    # Ищем картинку
     img_url = None
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src")
@@ -111,16 +122,6 @@ def parse_article(url):
             break
 
     return {"img": img_url, "text": body}
-
-# ВМЕСТО ИИ: Берем первые 2-3 абзаца (это и есть суть)
-def summarize_text(text):
-    if not text:
-        return ""
-    paragraphs = text.split("\n\n")
-    short_text = "\n\n".join(paragraphs[:3])
-    if len(short_text) > 600:
-        short_text = short_text[:600].rsplit(" ", 1)[0] + "..."
-    return short_text
 
 async def main():
     if not BOT_TOKEN or not CHANNEL_ID:
@@ -149,8 +150,8 @@ async def main():
                 mark_seen(conn, item["url"], article["text"])
                 continue
 
-            # Берем просто первые абзацы, без ИИ
-            short_text = summarize_text(article["text"])
+            # Берем готовый текст (уже обрезанный до целого предложения)
+            short_text = article["text"]
             
             caption = f"<b>{item['title']}</b>\n\n{short_text}\n\nИсточник: <a href=\"{item['url']}\">{item['source']}</a>"
 
@@ -166,7 +167,7 @@ async def main():
             mark_seen(conn, item["url"], article["text"])
             sent += 1
             
-            # Ждем 5 минут между постами
+            # Пауза 5 минут
             await asyncio.sleep(300) 
     finally:
         await bot.session.close()
