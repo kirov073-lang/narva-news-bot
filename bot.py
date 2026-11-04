@@ -94,9 +94,8 @@ def summarize_text(text):
     if not text or len(text) < 100:
         return text
     try:
-        # Используем стабильную модель
         response = client.models.generate_content(
-            model="gemini-1.5-flash", 
+            model="gemini-2.5-flash", 
             contents=f"Сократи этот текст до 3-5 предложений на русском языке. Оставь только суть. Пиши понятно.\n\n{text[:3000]}",
             config=types.GenerateContentConfig(
                 max_output_tokens=300,
