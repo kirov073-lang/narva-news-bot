@@ -7,7 +7,6 @@ from aiogram import Bot
 from aiogram.types import FSInputFile
 from datetime import datetime
 import os
-import re
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
@@ -43,7 +42,6 @@ def mark_seen(conn, url):
     conn.commit()
 
 def parse_stena_list():
-    """Собирает ссылки на новости с главной страницы."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     r = requests.get("https://www.stena.ee/", headers=headers, timeout=20)
     r.raise_for_status()
@@ -63,7 +61,6 @@ def parse_stena_list():
     return links[:15]
 
 def parse_article(url):
-    """Открывает страницу новости и вытаскивает текст + картинку."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     r = requests.get(url, headers=headers, timeout=20)
     r.raise_for_status()
@@ -80,7 +77,6 @@ def parse_article(url):
         if src:
             img_url = urljoin("https://www.stena.ee/", src)
 
-    # Убираем картинки из текста, оставляем только абзацы
     for tag in content.find_all(["div", "img"]):
         tag.decompose()
 
@@ -116,7 +112,7 @@ async def main():
                 mark_seen(conn, item["url"])
                 continue
 
-            caption = f"<b>{item['title']}</b>\n\n{article['text']}"
+            caption = f"<b>{item['title']}</b>\n\n{article['text']}\n\n{item['url']}"
             ok = False
             if article["img"]:
                 ok = await send_photo(bot, article["img"], caption)
